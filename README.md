@@ -35,6 +35,16 @@ Stop and remove database volume:
 docker compose down -v
 ```
 
+Push backend and frontend images to Docker Hub:
+
+```bash
+docker login
+export BACKEND_IMAGE=<your-dockerhub-username>/books-backend:latest
+export FRONTEND_IMAGE=<your-dockerhub-username>/books-frontend:latest
+docker compose build
+docker compose push
+```
+
 ## 2. Backend setup (without Docker)
 
 From `backend/`:

@@ -28,6 +28,7 @@ services:
       retries: 10
 
   backend:
+    image: ${BACKEND_IMAGE:-ci-assignment-backend:latest}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -58,6 +59,7 @@ services:
       retries: 10
 
   frontend:
+    image: ${FRONTEND_IMAGE:-ci-assignment-frontend:latest}
     build:
       context: ./frontend
       dockerfile: Dockerfile
