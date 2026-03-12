@@ -26,8 +26,10 @@ data:
   CACHE_TTL_SECONDS: "60"
   BACKEND_PORT: "8000"
   FRONTEND_PORT: "5173"
-  FRONTEND_ORIGIN: http://localhost:5173
-  VITE_API_BASE_URL: http://localhost:8000/api
+  # Allow all origins for browser access - change to specific domain in production
+  FRONTEND_ORIGIN: "*"
+  # Frontend will call backend via LoadBalancer URL
+  VITE_API_BASE_URL: http://a017dfb41e5ce48b5b8e74fa214e41ca-1072153637.us-east-1.elb.amazonaws.com:8000/api
 ---
 apiVersion: v1
 kind: PersistentVolume
@@ -332,7 +334,7 @@ spec:
             - until curl -sf http://backend:8000/api/health; do sleep 2; done
       containers:
         - name: frontend
-          image: ragrawal081720/books-frontend:latest
+          image: jatinbhalla1991/books-frontend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 5173
