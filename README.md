@@ -110,3 +110,23 @@ The frontend reads API URL from `VITE_API_BASE_URL` and defaults to `http://loca
 
 - `GET /api/books` caches list responses.
 - Cache is invalidated on create, update, and delete.
+
+## 7. Kubernetes deployment (dual LoadBalancer)
+
+Use the single manifest in repo root:
+
+```bash
+kubectl apply -f kube.yaml
+```
+
+After external DNS names are assigned to services, patch runtime URLs:
+
+```bash
+./scripts/patch-lb-urls.sh
+```
+
+Optional namespace override:
+
+```bash
+./scripts/patch-lb-urls.sh <namespace>
+```

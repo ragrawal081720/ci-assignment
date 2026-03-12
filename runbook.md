@@ -1,11 +1,11 @@
 # Dual LoadBalancer Runbook (ci-assignment)
 
-Use this when deploying `kube.dual-lb-explicit-urls.yaml` on EKS.
+Use this when deploying `kube.yaml` on EKS.
 
 ## 1. Deploy
 
 ```bash
-kubectl apply -f kube.dual-lb-explicit-urls.yaml
+kubectl apply -f kube.yaml
 ```
 
 ## 2. Wait for ELB hostnames

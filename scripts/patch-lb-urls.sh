@@ -1,6 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+usage() {
+  cat <<'EOF'
+Usage: ./scripts/patch-lb-urls.sh [namespace]
+
+Patches app runtime URLs in ConfigMap based on backend/frontend LoadBalancer DNS names,
+then restarts backend followed by frontend.
+
+Prerequisite:
+  kubectl apply -f kube.yaml
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
 NAMESPACE="${1:-ci-assignment}"
 
 require_cmd() {
