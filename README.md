@@ -39,11 +39,16 @@ Push backend and frontend images to Docker Hub:
 
 ```bash
 docker login
-export BACKEND_IMAGE=<your-dockerhub-username>/books-backend:latest
-export FRONTEND_IMAGE=<your-dockerhub-username>/books-frontend:latest
-docker compose build
-docker compose push
+./scripts/publish-multiarch.sh <your-dockerhub-username>
 ```
+
+Example:
+
+```bash
+./scripts/publish-multiarch.sh ragrawal081720
+```
+
+This publishes both `linux/amd64` and `linux/arm64` images and tags each image with both `sha-<current-commit>` and `latest`.
 
 ## 2. Backend setup (without Docker)
 
@@ -112,6 +117,12 @@ The frontend reads API URL from `VITE_API_BASE_URL` and defaults to `http://loca
 - Cache is invalidated on create, update, and delete.
 
 ## 7. Kubernetes deployment (dual LoadBalancer)
+
+`kube.yaml` uses `latest` for first-time bootstrap. For deterministic rollouts, switch deployments to the exact commit image tag:
+
+```bash
+./scripts/rollout-sha-images.sh <your-dockerhub-username>
+```
 
 Use the single manifest in repo root:
 

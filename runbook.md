@@ -2,6 +2,20 @@
 
 Use this when deploying `kube.yaml` on EKS.
 
+## 0. Image preflight
+
+Each commit should publish `sha-<commit>` plus `latest`. Use `sha-<commit>` for deterministic deployment and keep `latest` as the moving pointer to current main.
+
+```bash
+docker login
+./scripts/publish-multiarch.sh <your-dockerhub-username>
+
+# Optional: verify both amd64 and arm64 are present
+SHA_TAG="sha-$(git rev-parse --short HEAD)"
+docker manifest inspect <your-dockerhub-username>/books-frontend:$SHA_TAG | jq -r '.manifests[]?.platform | "\(.os)/\(.architecture)"'
+docker manifest inspect <your-dockerhub-username>/books-backend:$SHA_TAG | jq -r '.manifests[]?.platform | "\(.os)/\(.architecture)"'
+```
+
 ## 1. Deploy
 
 ```bash
@@ -40,6 +54,14 @@ kubectl patch configmap app-config -n ci-assignment --type merge -p \
 ## 5. Restart one deployment at a time
 
 This cluster can hit pod-capacity limits (`Too many pods`), so do not restart both at once.
+
+Use commit SHA image rollout instead of restart-only rollout:
+
+```bash
+./scripts/rollout-sha-images.sh <your-dockerhub-username>
+```
+
+Fallback restart-only flow:
 
 ```bash
 kubectl rollout restart deployment/backend -n ci-assignment
