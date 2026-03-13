@@ -19,6 +19,18 @@ require_cmd curl
 require_cmd tar
 require_cmd sed
 
+sed_in_place() {
+  local file="$1"
+  shift
+
+  # BSD sed (macOS) requires a backup suffix argument for -i.
+  if sed --version >/dev/null 2>&1; then
+    sed -i "$@" "$file"
+  else
+    sed -i '' "$@" "$file"
+  fi
+}
+
 TMP_DIR="$(mktemp -d)"
 cleanup() {
   rm -rf "${TMP_DIR}"
@@ -44,10 +56,9 @@ cp -R "${KP_DIR}/manifests" "${RENDER_DIR}"
 # kube-prometheus manifests are namespace-hardcoded to 'monitoring'.
 # Rewrite them so the stack can be installed to a custom namespace.
 while IFS= read -r -d '' f; do
-  sed -i '' \
+  sed_in_place "$f" \
     -e "s/namespace: monitoring/namespace: ${MON_NS}/g" \
-    -e "s/name: monitoring$/name: ${MON_NS}/g" \
-    "$f"
+    -e "s/name: monitoring$/name: ${MON_NS}/g"
 done < <(find "${RENDER_DIR}" -type f -name '*.yaml' -print0)
 
 apply_minimal_profile() {

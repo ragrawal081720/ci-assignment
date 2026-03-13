@@ -130,7 +130,7 @@ Use the single manifest in repo root:
 kubectl apply -f kube.yaml
 ```
 
-After external DNS names are assigned to services, patch runtime URLs:
+After external DNS names are assigned to services, patch runtime URLs and restart deployments in the safe order (backend, then frontend):
 
 ```bash
 ./scripts/patch-lb-urls.sh
@@ -141,3 +141,37 @@ Optional namespace override:
 ```bash
 ./scripts/patch-lb-urls.sh <namespace>
 ```
+
+Useful rollout/cleanup helpers:
+
+```bash
+# Deploy both backend/frontend with sha-<commit> tags
+./scripts/rollout-sha-images.sh <your-dockerhub-username>
+
+# Delete app + monitoring namespaces (non-blocking)
+./scripts/cleanup-namespaces.sh
+
+# Delete and wait for completion
+./scripts/cleanup-namespaces.sh --wait --timeout 300
+
+# Verify both namespaces are gone (exit 0 on success)
+./scripts/verify-namespaces-cleanup.sh
+```
+
+## 8. Monitoring stack
+
+Monitoring assets live in `monitoring/` and install Prometheus + Grafana via `kubectl` manifests (no Helm required).
+
+```bash
+./monitoring/install-monitoring.sh
+./monitoring/open-grafana.sh
+./monitoring/open-prometheus.sh
+```
+
+Optional environment overrides are supported:
+
+```bash
+MONITORING_NAMESPACE=ci-assignment-monitoring APP_NAMESPACE=ci-assignment ./monitoring/install-monitoring.sh
+```
+
+For monitoring details and alert/ServiceMonitor notes, see `monitoring/README.md`.

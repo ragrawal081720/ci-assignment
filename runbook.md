@@ -42,6 +42,26 @@ echo "FRONTEND_DNS=$FRONTEND_DNS"
 
 ## 4. Patch runtime URLs (include service ports)
 
+Preferred path (automated):
+
+```bash
+./scripts/patch-lb-urls.sh
+```
+
+Optional namespace override:
+
+```bash
+./scripts/patch-lb-urls.sh <namespace>
+```
+
+This script:
+- Reads backend/frontend LoadBalancer DNS names
+- Patches `app-config` with `FRONTEND_ORIGIN` and `VITE_API_BASE_URL`
+- Restarts backend first, then frontend
+- Runs quick health checks
+
+Manual fallback:
+
 Important:
 - Backend Service is exposed on `:8000`
 - Frontend Service is exposed on `:5173`
@@ -55,13 +75,13 @@ kubectl patch configmap app-config -n ci-assignment --type merge -p \
 
 This cluster can hit pod-capacity limits (`Too many pods`), so do not restart both at once.
 
-Use commit SHA image rollout instead of restart-only rollout:
+Use commit SHA image rollout instead of restart-only rollout (backend then frontend):
 
 ```bash
 ./scripts/rollout-sha-images.sh <your-dockerhub-username>
 ```
 
-Fallback restart-only flow:
+Fallback restart-only flow (if image is already correct):
 
 ```bash
 kubectl rollout restart deployment/backend -n ci-assignment
@@ -70,6 +90,8 @@ kubectl rollout status deployment/backend -n ci-assignment
 kubectl rollout restart deployment/frontend -n ci-assignment
 kubectl rollout status deployment/frontend -n ci-assignment
 ```
+
+If you used `./scripts/patch-lb-urls.sh`, this restart sequence is already handled by the script.
 
 ## 6. Verify
 

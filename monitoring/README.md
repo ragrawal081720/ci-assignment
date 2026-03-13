@@ -15,8 +15,10 @@ This folder contains scripts/manifests to install Prometheus + Grafana in your E
 ## Prerequisites
 
 - `kubectl` configured for your EKS cluster
-- `curl` and `tar` installed (used to fetch upstream manifests)
+- `curl`, `tar`, and `sed` installed (used to fetch and render upstream manifests)
 - App namespace deployed (default: `ci-assignment`)
+
+Scripts support both macOS (BSD tools) and Linux (GNU tools).
 
 Default install mode is a minimal profile for small clusters:
 - `Alertmanager` replicas reduced to 1
@@ -69,4 +71,10 @@ The installer also applies app-namespace RBAC so Prometheus can discover targets
 
 ```bash
 ./monitoring/uninstall-monitoring.sh
+```
+
+Optional namespace overrides:
+
+```bash
+MONITORING_NAMESPACE=ci-assignment-monitoring APP_NAMESPACE=ci-assignment ./monitoring/uninstall-monitoring.sh
 ```

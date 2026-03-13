@@ -19,6 +19,23 @@ if ! command -v tar >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v sed >/dev/null 2>&1; then
+  echo "Error: required command 'sed' is not installed." >&2
+  exit 1
+fi
+
+sed_in_place() {
+  local file="$1"
+  shift
+
+  # BSD sed (macOS) requires a backup suffix argument for -i.
+  if sed --version >/dev/null 2>&1; then
+    sed -i "$@" "$file"
+  else
+    sed -i '' "$@" "$file"
+  fi
+}
+
 TMP_DIR="$(mktemp -d)"
 cleanup() {
   rm -rf "${TMP_DIR}"
@@ -43,10 +60,9 @@ cp -R "${KP_DIR}/manifests" "${RENDER_DIR}"
 
 # Keep uninstall namespace-aligned with install rendering.
 while IFS= read -r -d '' f; do
-  sed -i '' \
+  sed_in_place "$f" \
     -e "s/namespace: monitoring/namespace: ${MON_NS}/g" \
-    -e "s/name: monitoring$/name: ${MON_NS}/g" \
-    "$f"
+    -e "s/name: monitoring$/name: ${MON_NS}/g"
 done < <(find "${RENDER_DIR}" -type f -name '*.yaml' -print0)
 
 echo "Deleting custom monitoring resources in namespace '${MON_NS}' if present..."
