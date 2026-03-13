@@ -9,6 +9,9 @@ Deletes namespaces used by this project:
   - ci-assignment
   - ci-assignment-monitoring
 
+Also deletes cluster-scoped storage resource used by Postgres:
+  - PersistentVolume/postgres-pv-local
+
 Options:
   --wait               Wait for namespaces to be fully deleted
   --timeout SECONDS    Max wait time when --wait is used (default: 300)
@@ -57,9 +60,15 @@ namespace_exists() {
   kubectl get namespace "$ns" >/dev/null 2>&1
 }
 
+pv_exists() {
+  local pv="$1"
+  kubectl get pv "$pv" >/dev/null 2>&1
+}
+
 require_cmd kubectl
 
 NAMESPACES=("ci-assignment" "ci-assignment-monitoring")
+POSTGRES_PV="postgres-pv-local"
 
 for ns in "${NAMESPACES[@]}"; do
   if namespace_exists "$ns"; then
@@ -69,6 +78,13 @@ for ns in "${NAMESPACES[@]}"; do
     echo "Namespace already absent: $ns"
   fi
 done
+
+if pv_exists "$POSTGRES_PV"; then
+  echo "Deleting persistent volume: $POSTGRES_PV"
+  kubectl delete pv "$POSTGRES_PV" --wait=false
+else
+  echo "Persistent volume already absent: $POSTGRES_PV"
+fi
 
 if [[ "$WAIT_FOR_DELETION" == true ]]; then
   echo "Waiting for namespace deletion (timeout: ${TIMEOUT_SECONDS}s)..."
@@ -80,6 +96,13 @@ if [[ "$WAIT_FOR_DELETION" == true ]]; then
       echo "Already deleted: $ns"
     fi
   done
+
+  if pv_exists "$POSTGRES_PV"; then
+    kubectl wait --for=delete pv/"$POSTGRES_PV" --timeout="${TIMEOUT_SECONDS}s"
+    echo "Deleted PV: $POSTGRES_PV"
+  else
+    echo "PV already deleted: $POSTGRES_PV"
+  fi
 fi
 
 echo "Cleanup command completed."

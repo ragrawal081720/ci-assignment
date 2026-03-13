@@ -9,9 +9,12 @@ Verifies project namespaces are fully cleaned up:
   - ci-assignment
   - ci-assignment-monitoring
 
+Also verifies cluster-scoped Postgres PV cleanup:
+  - PersistentVolume/postgres-pv-local
+
 Exit codes:
-  0 = all namespaces absent
-  1 = one or more namespaces still exist
+  0 = namespaces and postgres PV absent
+  1 = one or more cleanup targets still exist
 EOF
 }
 
@@ -30,6 +33,7 @@ require_cmd() {
 require_cmd kubectl
 
 NAMESPACES=("ci-assignment" "ci-assignment-monitoring")
+POSTGRES_PV="postgres-pv-local"
 ALL_CLEAN=true
 
 for ns in "${NAMESPACES[@]}"; do
@@ -40,6 +44,13 @@ for ns in "${NAMESPACES[@]}"; do
     echo "$ns: absent"
   fi
 done
+
+if kubectl get pv "$POSTGRES_PV" >/dev/null 2>&1; then
+  echo "pv/$POSTGRES_PV: present"
+  ALL_CLEAN=false
+else
+  echo "pv/$POSTGRES_PV: absent"
+fi
 
 if [[ "$ALL_CLEAN" == true ]]; then
   echo "Result: cleanup verified."

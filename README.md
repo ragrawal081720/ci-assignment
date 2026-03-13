@@ -81,16 +81,14 @@ Apply base manifest:
 kubectl apply -f kube.yaml
 ```
 
-Postgres storage now uses a dynamically provisioned PVC (no statically pinned PV).
-Your cluster must have a default `StorageClass` (or you can set `storageClassName`
-on `postgres-pvc` in `kube.yaml`).
+Postgres storage is statically pre-bound to `postgres-pv-local` using hostPath
+(`local-storage`) so it works directly in-cluster without EBS CSI provisioning.
 
-If you deployed an older version of this repo before this change, run this one-time
-cleanup to remove legacy static storage objects that can cause recurring PVC bind issues:
+If you redeploy frequently, use the cleanup helper to remove both namespaces and
+the cluster-scoped PV before fresh apply:
 
 ```bash
-kubectl delete pvc postgres-pvc -n ci-assignment --ignore-not-found
-kubectl delete pv postgres-pv-local --ignore-not-found
+./scripts/cleanup-namespaces.sh --wait --timeout 300
 kubectl apply -f kube.yaml
 ```
 
