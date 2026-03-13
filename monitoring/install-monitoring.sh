@@ -58,7 +58,9 @@ cp -R "${KP_DIR}/manifests" "${RENDER_DIR}"
 while IFS= read -r -d '' f; do
   sed_in_place "$f" \
     -e "s/namespace: monitoring/namespace: ${MON_NS}/g" \
-    -e "s/name: monitoring$/name: ${MON_NS}/g"
+    -e "s/name: monitoring$/name: ${MON_NS}/g" \
+    -e "s/\.monitoring\.svc\.cluster\.local/.${MON_NS}.svc.cluster.local/g" \
+    -e "s/\.monitoring\.svc/.${MON_NS}.svc/g"
 done < <(find "${RENDER_DIR}" -type f -name '*.yaml' -print0)
 
 apply_minimal_profile() {
