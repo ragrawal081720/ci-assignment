@@ -92,11 +92,6 @@ jobs:
           kubectl version --client
           kubectl config current-context
 
-      - name: Apply base manifests
-        shell: bash
-        run: |
-          kubectl apply -f kube.yaml
-
       - name: Roll out SHA-tagged images declaratively
         shell: bash
         run: |

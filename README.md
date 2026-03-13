@@ -81,6 +81,10 @@ Apply base manifest:
 kubectl apply -f kube.yaml
 ```
 
+Note:
+Run this base apply for first-time setup (or when infrastructure manifests change).
+For normal image updates, use only step `3.2` to avoid an extra rollout.
+
 Postgres storage is statically pre-bound to `postgres-pv-local` using hostPath
 (`local-storage`) so it works directly in-cluster without EBS CSI provisioning.
 
@@ -119,7 +123,7 @@ Wait until both `backend` and `frontend` have non-empty external hostnames.
 - Patches `app-config` with:
 	- `FRONTEND_ORIGIN=http://<frontend-dns>:5173`
 	- `VITE_API_BASE_URL=http://<backend-dns>:8000/api`
-- Restarts backend first, then frontend
+- Restarts only the deployments whose runtime values changed
 - Runs quick health checks
 
 Run:
@@ -132,6 +136,12 @@ Optional namespace override:
 
 ```bash
 ./scripts/patch-lb-urls.sh <namespace>
+```
+
+Force restart both deployments even when values are unchanged:
+
+```bash
+./scripts/patch-lb-urls.sh <namespace> --force-restart
 ```
 
 ### 3.5 Verify deployment
