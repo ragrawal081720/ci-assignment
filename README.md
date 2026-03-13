@@ -200,7 +200,11 @@ Grafana username: `admin`
 Fetch Grafana password:
 
 ```bash
-kubectl get secret grafana-admin-credentials -n ci-assignment-monitoring -o jsonpath='{.data.admin-password}' | base64 --decode && echo
+if kubectl get secret grafana-admin-credentials -n ci-assignment-monitoring >/dev/null 2>&1; then
+	kubectl get secret grafana-admin-credentials -n ci-assignment-monitoring -o jsonpath='{.data.admin-password}' | base64 --decode && echo
+else
+	kubectl get secret grafana -n ci-assignment-monitoring -o jsonpath='{.data.admin-password}' | base64 --decode && echo
+fi
 ```
 
 The backend metrics endpoint scraped by ServiceMonitor is:

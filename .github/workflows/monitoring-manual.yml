@@ -103,8 +103,14 @@ jobs:
             echo "Installed monitoring components:"
             kubectl get pods -n "$MONITORING_NAMESPACE"
 
-            echo "Grafana password (masked) is stored in secret: grafana-admin-credentials"
-            kubectl get secret grafana-admin-credentials -n "$MONITORING_NAMESPACE" -o jsonpath='{.metadata.name}{"\n"}'
+            if kubectl get secret grafana-admin-credentials -n "$MONITORING_NAMESPACE" >/dev/null 2>&1; then
+              echo "Grafana credentials secret: grafana-admin-credentials"
+            elif kubectl get secret grafana -n "$MONITORING_NAMESPACE" >/dev/null 2>&1; then
+              echo "Grafana credentials secret: grafana"
+            else
+              echo "Grafana credentials secret not found yet. Available Grafana-related secrets:"
+              kubectl get secrets -n "$MONITORING_NAMESPACE" | grep -i grafana || true
+            fi
           else
             MONITORING_NAMESPACE="$MONITORING_NAMESPACE" \
             APP_NAMESPACE="$APP_NAMESPACE" \
