@@ -33,7 +33,8 @@ Key paths:
 - `helm/ci-assignment/` Helm chart for app deployment
 - `monitoring/` kube-prometheus install/uninstall/open scripts + alerting/ServiceMonitor manifests
 - `scripts/` deployment, URL patching, image publish, and cleanup helpers
-- `terraform/` EKS and VPC provisioning config
+- `terraform/eks/` EKS and VPC provisioning stack
+- `terraform/ecr/` ECR provisioning stack
 - `.github/workflows/` CI/CD/manual workflow definitions
 
 ## Prerequisites
@@ -334,7 +335,7 @@ base64 < ~/.kube/config | tr -d '\n'
 
 ## 10. Terraform Infra (EKS)
 
-`terraform/main.tf` provisions:
+`terraform/eks/main.tf` provisions:
 - VPC with public subnets
 - EKS cluster (`cluster_name` default: `ci-eks-cluster`)
 - Managed node group (default `t3.small`, desired size `2`)
@@ -342,16 +343,40 @@ base64 < ~/.kube/config | tr -d '\n'
 Quick run:
 
 ```bash
-cd terraform
+cd terraform/eks
 terraform init
 terraform plan
 terraform apply
+```
+
+Useful overrides:
+
+```bash
+terraform apply \
+	-var="aws_region=ap-south-1" \
+	-var="cluster_name=ci-eks-cluster" \
+	-var="vpc_cidr=10.0.0.0/16"
 ```
 
 After apply, configure kubeconfig:
 
 ```bash
 aws eks update-kubeconfig --name ci-eks-cluster --region ap-south-1
+```
+
+## 10.1 Terraform ECR (separate state)
+
+`terraform/ecr/` provisions only ECR resources in a separate Terraform stack:
+- ECR repository
+- ECR lifecycle policy
+
+Quick run:
+
+```bash
+cd terraform/ecr
+terraform init
+terraform plan
+terraform apply
 ```
 
 ## 11. Deployment Workflow Challenges and Lessons Learned

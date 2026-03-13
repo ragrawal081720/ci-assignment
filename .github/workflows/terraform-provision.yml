@@ -45,30 +45,30 @@ jobs:
           terraform_wrapper: false
 
       - name: Terraform init
-        working-directory: ./terraform
+        working-directory: ./terraform/eks
         shell: bash
         run: terraform init -input=false
 
       - name: Terraform validate
-        working-directory: ./terraform
+        working-directory: ./terraform/eks
         shell: bash
         run: terraform validate
 
       - name: Terraform plan
-        working-directory: ./terraform
+        working-directory: ./terraform/eks
         shell: bash
         run: terraform plan -input=false -out=tfplan
 
       - name: Terraform apply
         if: inputs.terraform_action == 'apply'
-        working-directory: ./terraform
+        working-directory: ./terraform/eks
         shell: bash
         run: terraform apply -input=false -auto-approve tfplan
 
       - name: Export Terraform outputs
         if: inputs.terraform_action == 'apply'
         id: tf_outputs
-        working-directory: ./terraform
+        working-directory: ./terraform/eks
         shell: bash
         run: |
           echo "cluster_name=$(terraform output -raw cluster_name)" >> "$GITHUB_OUTPUT"
