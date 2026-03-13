@@ -251,7 +251,6 @@ Workflow: `.github/workflows/ci-cd-build-push-deploy.yml`
 On push to `main` (relevant paths), the workflow:
 - Builds and pushes multi-arch backend/frontend images
 - Tags with `latest` and `sha-<commit>`
-- Applies `kube.yaml`
 - Rolls out SHA images via `scripts/rollout-sha-images.sh`
 - Waits for LB hostnames
 - Patches runtime URLs via `scripts/patch-lb-urls.sh`
@@ -272,3 +271,28 @@ Generate `KUBECONFIG_B64` locally:
 ```bash
 base64 < ~/.kube/config | tr -d '\n'
 ```
+
+## 8. Manual monitoring workflow (GitHub Actions)
+
+Workflow: `.github/workflows/monitoring-manual.yml`
+
+This workflow is manual-only and does not run on push/PR.
+
+In GitHub UI:
+1. Open **Actions**.
+2. Select **Monitoring - Manual Install/Uninstall**.
+3. Click **Run workflow**.
+4. Choose inputs and run.
+
+Supported workflow inputs:
+- `operation`: `install` or `uninstall`
+- `app_namespace`: defaults to `ci-assignment`
+- `monitoring_namespace`: defaults to `ci-assignment-monitoring`
+- `kube_prom_version`: defaults to `v0.14.0`
+- `minimal_profile`: defaults to `true`
+
+Required GitHub secrets (same cluster auth as deploy workflow):
+- `KUBECONFIG_B64`
+- `AWS_REGION`
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`

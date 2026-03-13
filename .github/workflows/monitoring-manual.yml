@@ -1,0 +1,115 @@
+name: Monitoring - Manual Install/Uninstall
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Choose monitoring operation"
+        required: true
+        default: "install"
+        type: choice
+        options:
+          - install
+          - uninstall
+      app_namespace:
+        description: "Application namespace"
+        required: true
+        default: "ci-assignment"
+        type: string
+      monitoring_namespace:
+        description: "Monitoring namespace"
+        required: true
+        default: "ci-assignment-monitoring"
+        type: string
+      kube_prom_version:
+        description: "kube-prometheus release tag"
+        required: true
+        default: "v0.14.0"
+        type: string
+      minimal_profile:
+        description: "Install minimal monitoring profile"
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: monitoring-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  monitoring:
+    name: Run Monitoring Operation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (access keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Validate AWS auth is available
+        shell: bash
+        run: |
+          aws --version
+          aws sts get-caller-identity
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+
+      - name: Configure kubeconfig
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+          kubectl version --client
+          kubectl config current-context
+
+      - name: Execute monitoring operation
+        shell: bash
+        env:
+          OPERATION: ${{ inputs.operation }}
+          APP_NAMESPACE: ${{ inputs.app_namespace }}
+          MONITORING_NAMESPACE: ${{ inputs.monitoring_namespace }}
+          KUBE_PROM_VERSION: ${{ inputs.kube_prom_version }}
+          MINIMAL_PROFILE: ${{ inputs.minimal_profile }}
+        run: |
+          set -euo pipefail
+
+          echo "Operation: $OPERATION"
+          echo "App namespace: $APP_NAMESPACE"
+          echo "Monitoring namespace: $MONITORING_NAMESPACE"
+
+          if [[ "$OPERATION" == "install" ]]; then
+            MONITORING_NAMESPACE="$MONITORING_NAMESPACE" \
+            APP_NAMESPACE="$APP_NAMESPACE" \
+            KUBE_PROM_VERSION="$KUBE_PROM_VERSION" \
+            MINIMAL_PROFILE="$MINIMAL_PROFILE" \
+            ./monitoring/install-monitoring.sh
+
+            echo "Installed monitoring components:"
+            kubectl get pods -n "$MONITORING_NAMESPACE"
+
+            echo "Grafana password (masked) is stored in secret: grafana-admin-credentials"
+            kubectl get secret grafana-admin-credentials -n "$MONITORING_NAMESPACE" -o jsonpath='{.metadata.name}{"\n"}'
+          else
+            MONITORING_NAMESPACE="$MONITORING_NAMESPACE" \
+            APP_NAMESPACE="$APP_NAMESPACE" \
+            ./monitoring/uninstall-monitoring.sh
+
+            echo "Monitoring uninstall requested. Current namespace state:"
+            kubectl get ns "$MONITORING_NAMESPACE" || true
+          fi
