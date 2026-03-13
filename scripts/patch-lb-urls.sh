@@ -44,12 +44,19 @@ require_cmd curl
 
 echo "Using namespace: $NAMESPACE"
 
-echo "Fetching LoadBalancer hostnames..."
+echo "Fetching LoadBalancer hostname/IP endpoints..."
 BACKEND_DNS="$(kubectl get svc backend -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
 FRONTEND_DNS="$(kubectl get svc frontend -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
 
+if [[ -z "$BACKEND_DNS" ]]; then
+  BACKEND_DNS="$(kubectl get svc backend -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
+fi
+if [[ -z "$FRONTEND_DNS" ]]; then
+  FRONTEND_DNS="$(kubectl get svc frontend -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
+fi
+
 if [[ -z "$BACKEND_DNS" || -z "$FRONTEND_DNS" ]]; then
-  echo "Error: could not resolve backend/frontend LoadBalancer DNS names." >&2
+  echo "Error: could not resolve backend/frontend LoadBalancer hostname/IP." >&2
   echo "Make sure services exist and EXTERNAL-IP is assigned:" >&2
   echo "  kubectl get svc -n $NAMESPACE" >&2
   exit 1

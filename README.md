@@ -108,13 +108,13 @@ Options:
 - `./scripts/rollout-sha-images.sh <dockerhub-username> <namespace>`
 - `./scripts/rollout-sha-images.sh <dockerhub-username> <namespace> <commit-sha>`
 
-### 3.3 Wait for LoadBalancer DNS names
+### 3.3 Wait for LoadBalancer endpoints
 
 ```bash
 kubectl get svc -n ci-assignment -w
 ```
 
-Wait until both `backend` and `frontend` have non-empty external hostnames.
+Wait until both `backend` and `frontend` have non-empty external endpoints (hostname or IP).
 
 ### 3.4 Patch runtime URLs and restart in safe order
 

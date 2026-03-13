@@ -98,7 +98,7 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::7}"
           ./scripts/rollout-sha-images.sh "$DOCKERHUB_USER" "$NS" "$SHORT_SHA"
 
-      - name: Wait for LoadBalancer hostnames
+      - name: Wait for LoadBalancer endpoints
         shell: bash
         run: |
           NS="ci-assignment"
@@ -108,19 +108,26 @@ jobs:
             BACKEND_DNS="$(kubectl get svc backend -n "$NS" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
             FRONTEND_DNS="$(kubectl get svc frontend -n "$NS" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
 
+            if [[ -z "$BACKEND_DNS" ]]; then
+              BACKEND_DNS="$(kubectl get svc backend -n "$NS" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
+            fi
+            if [[ -z "$FRONTEND_DNS" ]]; then
+              FRONTEND_DNS="$(kubectl get svc frontend -n "$NS" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
+            fi
+
             if [[ -n "$BACKEND_DNS" && -n "$FRONTEND_DNS" ]]; then
-              echo "Backend DNS: $BACKEND_DNS"
-              echo "Frontend DNS: $FRONTEND_DNS"
+              echo "Backend endpoint: $BACKEND_DNS"
+              echo "Frontend endpoint: $FRONTEND_DNS"
               break
             fi
 
             if (( SECONDS >= DEADLINE )); then
-              echo "Timed out waiting for LoadBalancer hostnames in namespace '$NS'." >&2
+              echo "Timed out waiting for LoadBalancer hostname/IP in namespace '$NS'." >&2
               kubectl get svc -n "$NS"
               exit 1
             fi
 
-            echo "Waiting for LoadBalancer hostnames..."
+            echo "Waiting for LoadBalancer hostname/IP..."
             sleep 10
           done
 
