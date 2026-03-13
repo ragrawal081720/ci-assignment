@@ -1,0 +1,164 @@
+{{- if and .Values.lbUrlPatching.enabled .Values.config.create .Values.backend.enabled .Values.frontend.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "ci-assignment.fullname" . }}-lb-url-patcher
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "ci-assignment.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "ci-assignment.fullname" . }}-lb-url-patcher
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "ci-assignment.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
+rules:
+  - apiGroups: [""]
+    resources: ["services", "configmaps"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "ci-assignment.fullname" . }}-lb-url-patcher
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "ci-assignment.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "ci-assignment.fullname" . }}-lb-url-patcher
+    namespace: {{ .Values.namespace.name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "ci-assignment.fullname" . }}-lb-url-patcher
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "ci-assignment.fullname" . }}-lb-url-patcher
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "ci-assignment.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
+spec:
+  activeDeadlineSeconds: {{ .Values.lbUrlPatching.timeoutSeconds }}
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: lb-url-patcher
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "ci-assignment.fullname" . }}-lb-url-patcher
+      containers:
+        - name: patcher
+          image: {{ .Values.lbUrlPatching.hookImage }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              set -eu
+
+              NAMESPACE="{{ .Values.namespace.name }}"
+              CONFIGMAP_NAME="{{ .Values.config.name }}"
+              BACKEND_SVC="{{ .Values.backend.serviceName }}"
+              FRONTEND_SVC="{{ .Values.frontend.serviceName }}"
+              BACKEND_DEPLOYMENT="{{ .Values.backend.deploymentName }}"
+              FRONTEND_DEPLOYMENT="{{ .Values.frontend.deploymentName }}"
+              BACKEND_PORT="{{ .Values.backend.service.port }}"
+              FRONTEND_PORT="{{ .Values.frontend.service.port }}"
+              CHECK_INTERVAL={{ .Values.lbUrlPatching.checkIntervalSeconds }}
+              TIMEOUT={{ .Values.lbUrlPatching.timeoutSeconds }}
+              FORCE_RESTART="{{ .Values.lbUrlPatching.forceRestart }}"
+
+              backend_type="$(kubectl get svc "$BACKEND_SVC" -n "$NAMESPACE" -o jsonpath='{.spec.type}')"
+              frontend_type="$(kubectl get svc "$FRONTEND_SVC" -n "$NAMESPACE" -o jsonpath='{.spec.type}')"
+
+              if [ "$backend_type" != "LoadBalancer" ] || [ "$frontend_type" != "LoadBalancer" ]; then
+                echo "Skipping URL patch hook because one or both services are not LoadBalancer type."
+                exit 0
+              fi
+
+              elapsed=0
+              backend_dns=""
+              frontend_dns=""
+
+              while [ "$elapsed" -lt "$TIMEOUT" ]; do
+                backend_dns="$(kubectl get svc "$BACKEND_SVC" -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
+                [ -n "$backend_dns" ] || backend_dns="$(kubectl get svc "$BACKEND_SVC" -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
+
+                frontend_dns="$(kubectl get svc "$FRONTEND_SVC" -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
+                [ -n "$frontend_dns" ] || frontend_dns="$(kubectl get svc "$FRONTEND_SVC" -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
+
+                if [ -n "$backend_dns" ] && [ -n "$frontend_dns" ]; then
+                  break
+                fi
+
+                sleep "$CHECK_INTERVAL"
+                elapsed=$((elapsed + CHECK_INTERVAL))
+              done
+
+              if [ -z "$backend_dns" ] || [ -z "$frontend_dns" ]; then
+                echo "Timed out waiting for LoadBalancer endpoints (timeout=${TIMEOUT}s)."
+                exit 1
+              fi
+
+              frontend_origin="http://${frontend_dns}:${FRONTEND_PORT}"
+              vite_api_base_url="http://${backend_dns}:${BACKEND_PORT}/api"
+
+              current_frontend_origin="$(kubectl get configmap "$CONFIGMAP_NAME" -n "$NAMESPACE" -o jsonpath='{.data.FRONTEND_ORIGIN}' 2>/dev/null || true)"
+              current_vite_api_base_url="$(kubectl get configmap "$CONFIGMAP_NAME" -n "$NAMESPACE" -o jsonpath='{.data.VITE_API_BASE_URL}' 2>/dev/null || true)"
+
+              backend_needs_restart="false"
+              frontend_needs_restart="false"
+
+              if [ "$current_frontend_origin" != "$frontend_origin" ]; then
+                backend_needs_restart="true"
+              fi
+
+              if [ "$current_vite_api_base_url" != "$vite_api_base_url" ]; then
+                frontend_needs_restart="true"
+              fi
+
+              if [ "$FORCE_RESTART" = "true" ]; then
+                backend_needs_restart="true"
+                frontend_needs_restart="true"
+              fi
+
+              if [ "$backend_needs_restart" = "true" ] || [ "$frontend_needs_restart" = "true" ]; then
+                kubectl patch configmap "$CONFIGMAP_NAME" -n "$NAMESPACE" --type merge -p \
+                  "{\"data\":{\"FRONTEND_ORIGIN\":\"${frontend_origin}\",\"VITE_API_BASE_URL\":\"${vite_api_base_url}\"}}"
+              fi
+
+              if [ "$backend_needs_restart" = "true" ]; then
+                kubectl rollout restart deployment/"$BACKEND_DEPLOYMENT" -n "$NAMESPACE"
+              fi
+
+              if [ "$frontend_needs_restart" = "true" ]; then
+                kubectl rollout restart deployment/"$FRONTEND_DEPLOYMENT" -n "$NAMESPACE"
+              fi
+
+              echo "LB URL patch hook completed."
+{{- end }}

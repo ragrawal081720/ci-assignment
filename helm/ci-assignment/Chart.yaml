@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ci-assignment
+description: Helm chart for the Books CRUD app (FastAPI, React, PostgreSQL, Redis)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

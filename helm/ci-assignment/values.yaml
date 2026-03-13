@@ -1,0 +1,90 @@
+nameOverride: ""
+fullnameOverride: ""
+
+namespace:
+  create: false
+  name: ci-assignment
+
+secret:
+  create: true
+  name: app-secrets
+  data:
+    DB_NAME: books_db
+    DB_USER: postgres
+    DB_PASSWORD: postgres
+
+config:
+  create: true
+  name: app-config
+  data:
+    DB_PORT: "5432"
+    REDIS_PORT: "6379"
+    REDIS_DB: "0"
+    CACHE_TTL_SECONDS: "60"
+    BACKEND_PORT: "8000"
+    FRONTEND_PORT: "5173"
+    FRONTEND_ORIGIN: http://frontend.example.com:5173
+    VITE_API_BASE_URL: http://backend.example.com:8000/api
+
+postgres:
+  enabled: true
+  image: postgres:16
+  deploymentName: postgres
+  serviceName: postgres
+  replicas: 1
+  service:
+    port: 5432
+  persistence:
+    enabled: true
+    createPv: true
+    pvName: postgres-pv-local
+    pvcName: postgres-pvc
+    storageClassName: local-storage
+    size: 2Gi
+    hostPath: /var/lib/k8s/postgres-data
+
+redis:
+  enabled: true
+  image: redis:7
+  deploymentName: redis
+  serviceName: redis
+  replicas: 1
+  service:
+    port: 6379
+
+backend:
+  enabled: true
+  image:
+    repository: ragrawal081720/books-backend
+    tag: latest
+    pullPolicy: Always
+  deploymentName: backend
+  serviceName: backend
+  replicas: 1
+  service:
+    type: LoadBalancer
+    port: 8000
+  healthPath: /api/health
+
+frontend:
+  enabled: true
+  image:
+    repository: ragrawal081720/books-frontend
+    tag: latest
+    pullPolicy: Always
+  deploymentName: frontend
+  serviceName: frontend
+  replicas: 1
+  strategy:
+    type: Recreate
+  service:
+    type: LoadBalancer
+    port: 5173
+
+lbUrlPatching:
+  enabled: true
+  # Runs as a Helm post-install/post-upgrade hook and patches app-config based on LB endpoints.
+  hookImage: bitnami/kubectl:latest
+  timeoutSeconds: 240
+  checkIntervalSeconds: 5
+  forceRestart: false

@@ -1,0 +1,18 @@
+# Common VCS files
+.git/
+.gitignore
+
+# macOS
+.DS_Store
+
+# IDE files
+.vscode/
+.idea/
+
+# Terraform artifacts
+*.tfstate
+*.tfstate.backup
+
+# Editor swap files
+*.swp
+*.swo

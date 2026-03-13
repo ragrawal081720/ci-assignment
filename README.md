@@ -8,6 +8,18 @@ This repository contains:
 - Monitoring scripts/manifests for Prometheus + Grafana
 - CI/CD workflow for image publish + Kubernetes deployment
 
+## Table of Contents
+
+1. [Run locally with Docker Compose](#1-run-locally-with-docker-compose)
+2. [Build and push multi-arch images to Docker Hub](#2-build-and-push-multi-arch-images-to-docker-hub)
+3. [Deploy to Kubernetes](#3-deploy-to-kubernetes)
+4. [Deploy with Helm (optional)](#36-deploy-with-helm-optional)
+5. [Install and use monitoring (Prometheus + Grafana)](#4-install-and-use-monitoring-prometheus--grafana)
+6. [Cleanup helpers](#5-cleanup-helpers)
+7. [API endpoints](#6-api-endpoints)
+8. [CI/CD workflow](#7-cicd-workflow)
+9. [Manual monitoring workflow (GitHub Actions)](#8-manual-monitoring-workflow-github-actions)
+
 ## Prerequisites
 
 - Docker with Buildx support
@@ -159,6 +171,91 @@ Open app in browser:
 
 ```text
 http://<FRONTEND_DNS>:5173
+```
+
+### 3.6 Deploy with Helm (optional)
+
+This repository also includes a Helm chart at `helm/ci-assignment`.
+It is an additional deployment option and does not replace existing methods
+(`kube.yaml`, scripts, or monitoring scripts).
+
+Chart deploys:
+- Namespace (optional)
+- Secret `app-secrets`
+- ConfigMap `app-config`
+- PostgreSQL Deployment + Service (+ PV/PVC for local hostPath by default)
+- Redis Deployment + Service
+- Backend Deployment + LoadBalancer Service
+- Frontend Deployment + LoadBalancer Service
+
+Validate chart:
+
+```bash
+helm lint helm/ci-assignment
+helm template ci-assignment helm/ci-assignment
+```
+
+Install:
+
+```bash
+kubectl create namespace ci-assignment --dry-run=client -o yaml | kubectl apply -f -
+helm upgrade --install ci-assignment helm/ci-assignment \
+	-n ci-assignment
+```
+
+If you want Helm to create namespace resource itself:
+
+```bash
+helm upgrade --install ci-assignment helm/ci-assignment \
+	-n ci-assignment \
+	--set namespace.create=true
+```
+
+Override image tags:
+
+```bash
+helm upgrade --install ci-assignment helm/ci-assignment \
+	-n ci-assignment \
+	--set backend.image.repository=<dockerhub-user>/books-backend \
+	--set backend.image.tag=sha-<short-sha> \
+	--set frontend.image.repository=<dockerhub-user>/books-frontend \
+	--set frontend.image.tag=sha-<short-sha>
+```
+
+LoadBalancer URL patching with Helm:
+- By default, a post-install/post-upgrade hook waits for backend/frontend
+	LoadBalancer endpoints.
+- It patches `app-config` (`FRONTEND_ORIGIN`, `VITE_API_BASE_URL`) and restarts
+	backend/frontend only when values change.
+
+Disable hook patching and patch manually:
+
+```bash
+helm upgrade --install ci-assignment helm/ci-assignment \
+	-n ci-assignment \
+	--set lbUrlPatching.enabled=false
+```
+
+If your cluster cannot pull the default hook image, override it explicitly:
+
+```bash
+helm upgrade --install ci-assignment helm/ci-assignment \
+	-n ci-assignment \
+	--set lbUrlPatching.hookImage=bitnami/kubectl:latest
+```
+
+If your cloud takes longer to allocate LoadBalancer endpoints, increase Helm timeout:
+
+```bash
+helm upgrade --install ci-assignment helm/ci-assignment \
+	-n ci-assignment \
+	--timeout 15m
+```
+
+Uninstall Helm release:
+
+```bash
+helm uninstall ci-assignment -n ci-assignment
 ```
 
 ## 4. Install and use monitoring (Prometheus + Grafana)

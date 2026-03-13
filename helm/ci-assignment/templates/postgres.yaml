@@ -1,0 +1,114 @@
+{{- if .Values.postgres.enabled }}
+{{- if and .Values.postgres.persistence.enabled .Values.postgres.persistence.createPv }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ .Values.postgres.persistence.pvName }}
+  labels:
+    {{- include "ci-assignment.labels" . | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .Values.postgres.persistence.size }}
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ .Values.postgres.persistence.storageClassName }}
+  hostPath:
+    path: {{ .Values.postgres.persistence.hostPath }}
+    type: DirectoryOrCreate
+---
+{{- end }}
+{{- if .Values.postgres.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.postgres.persistence.pvcName }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "ci-assignment.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.postgres.persistence.size }}
+  storageClassName: {{ .Values.postgres.persistence.storageClassName }}
+  volumeName: {{ .Values.postgres.persistence.pvName }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.postgres.deploymentName }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: postgres
+    {{- include "ci-assignment.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.postgres.replicas }}
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image }}
+          ports:
+            - containerPort: {{ .Values.postgres.service.port }}
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name }}
+                  key: DB_NAME
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name }}
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name }}
+                  key: DB_PASSWORD
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.postgres.service.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: {{ .Values.postgres.persistence.pvcName }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.postgres.serviceName }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: postgres
+    {{- include "ci-assignment.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: {{ .Values.postgres.service.port }}
+      targetPort: {{ .Values.postgres.service.port }}
+{{- end }}
