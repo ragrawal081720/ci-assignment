@@ -261,8 +261,8 @@ Required GitHub secrets:
 - `DOCKERHUB_TOKEN`
 - `KUBECONFIG_B64`
 
-Optional GitHub variable:
-- `K8S_NAMESPACE` (default fallback: `ci-assignment`)
+Deploy namespace is fixed in CI:
+- `ci-assignment`
 
 Generate `KUBECONFIG_B64` locally:
 

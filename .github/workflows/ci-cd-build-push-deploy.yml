@@ -72,7 +72,6 @@ jobs:
     if: github.ref == 'refs/heads/main'
     env:
       DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USERNAME }}
-      K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE }}
 
     steps:
       - name: Checkout repository
@@ -95,14 +94,14 @@ jobs:
       - name: Roll out SHA-tagged images declaratively
         shell: bash
         run: |
-          NS="${K8S_NAMESPACE:-ci-assignment}"
+          NS="ci-assignment"
           SHORT_SHA="${GITHUB_SHA::7}"
           ./scripts/rollout-sha-images.sh "$DOCKERHUB_USER" "$NS" "$SHORT_SHA"
 
       - name: Wait for LoadBalancer hostnames
         shell: bash
         run: |
-          NS="${K8S_NAMESPACE:-ci-assignment}"
+          NS="ci-assignment"
           DEADLINE=$((SECONDS + 900))
 
           while true; do
@@ -128,5 +127,5 @@ jobs:
       - name: Patch runtime URLs and verify endpoints
         shell: bash
         run: |
-          NS="${K8S_NAMESPACE:-ci-assignment}"
+          NS="ci-assignment"
           ./scripts/patch-lb-urls.sh "$NS"
