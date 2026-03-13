@@ -75,7 +75,7 @@ kubectl patch configmap app-config -n ci-assignment --type merge -p \
 
 This cluster can hit pod-capacity limits (`Too many pods`), so do not restart both at once.
 
-Use commit SHA image rollout instead of restart-only rollout (backend then frontend):
+Use commit SHA declarative rollout instead of restart-only rollout (applies manifest via `kubectl apply -k`, then waits backend/frontend):
 
 ```bash
 ./scripts/rollout-sha-images.sh <your-dockerhub-username>

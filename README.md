@@ -118,7 +118,7 @@ The frontend reads API URL from `VITE_API_BASE_URL` and defaults to `http://loca
 
 ## 7. Kubernetes deployment (dual LoadBalancer)
 
-`kube.yaml` uses `latest` for first-time bootstrap. For deterministic rollouts, switch deployments to the exact commit image tag:
+`kube.yaml` uses `latest` for first-time bootstrap. For deterministic rollouts, apply a declarative Kustomize overlay with exact commit image tags:
 
 ```bash
 ./scripts/rollout-sha-images.sh <your-dockerhub-username>
@@ -145,7 +145,7 @@ Optional namespace override:
 Useful rollout/cleanup helpers:
 
 ```bash
-# Deploy both backend/frontend with sha-<commit> tags
+# Deploy backend/frontend declaratively with sha-<commit> tags
 ./scripts/rollout-sha-images.sh <your-dockerhub-username>
 
 # Delete app + monitoring namespaces (non-blocking)
@@ -175,3 +175,28 @@ MONITORING_NAMESPACE=ci-assignment-monitoring APP_NAMESPACE=ci-assignment ./moni
 ```
 
 For monitoring details and alert/ServiceMonitor notes, see `monitoring/README.md`.
+
+## 9. GitHub Actions CI/CD
+
+Workflow file: `.github/workflows/ci-cd-build-push-deploy.yml`
+
+On push to `main` (backend/frontend/kube/scripts/workflow changes), the pipeline:
+- Builds and pushes multi-arch backend/frontend images to Docker Hub
+- Tags images with both `latest` and `sha-<commit>`
+- Applies `kube.yaml` to the cluster
+- Deploys SHA-pinned images via `./scripts/rollout-sha-images.sh`
+- Waits for LoadBalancer hostnames and patches runtime URLs via `./scripts/patch-lb-urls.sh`
+
+Required GitHub repository secrets:
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`
+- `KUBECONFIG_B64` (base64-encoded kubeconfig content)
+
+Optional GitHub repository variable:
+- `K8S_NAMESPACE` (defaults to `ci-assignment`)
+
+Create `KUBECONFIG_B64` value locally with:
+
+```bash
+base64 < ~/.kube/config | tr -d '\n'
+```
