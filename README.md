@@ -260,6 +260,9 @@ Required GitHub secrets:
 - `DOCKERHUB_USERNAME`
 - `DOCKERHUB_TOKEN`
 - `KUBECONFIG_B64`
+- `AWS_REGION`
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
 
 Deploy namespace is fixed in CI:
 - `ci-assignment`
