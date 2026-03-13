@@ -1,0 +1,44 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: app-infra-alerts
+  namespace: __MONITORING_NAMESPACE__
+spec:
+  groups:
+    - name: app-infra.rules
+      rules:
+        - alert: NodeCPUHigh
+          expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High CPU usage on node {{ $labels.instance }}"
+            description: "Node CPU is above 85% for 10 minutes."
+
+        - alert: NodeMemoryHigh
+          expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High memory usage on node {{ $labels.instance }}"
+            description: "Node memory usage is above 90% for 10 minutes."
+
+        - alert: PodRestartsHigh
+          expr: increase(kube_pod_container_status_restarts_total{namespace="__APP_NAMESPACE__"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High restart count in __APP_NAMESPACE__"
+            description: "Container {{ $labels.container }} in pod {{ $labels.pod }} restarted more than 3 times in 15m."
+
+        - alert: DeploymentReplicasMismatch
+          expr: kube_deployment_status_replicas_available{namespace="__APP_NAMESPACE__"} < kube_deployment_spec_replicas{namespace="__APP_NAMESPACE__"}
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Deployment replicas unavailable in __APP_NAMESPACE__"
+            description: "Deployment {{ $labels.deployment }} has fewer available replicas than desired for 10m."

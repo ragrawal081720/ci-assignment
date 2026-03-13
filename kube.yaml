@@ -299,6 +299,8 @@ kind: Service
 metadata:
   name: backend
   namespace: ci-assignment
+  labels:
+    app: backend
 spec:
   type: LoadBalancer
   selector:
@@ -360,6 +362,8 @@ kind: Service
 metadata:
   name: frontend
   namespace: ci-assignment
+  labels:
+    app: frontend
 spec:
   type: LoadBalancer
   selector:

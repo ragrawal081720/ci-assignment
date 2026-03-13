@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.books import router as books_router
 from app.api.health import router as health_router
@@ -17,3 +18,5 @@ app.add_middleware(
 
 app.include_router(health_router, prefix=settings.api_prefix)
 app.include_router(books_router, prefix=settings.api_prefix)
+
+Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
