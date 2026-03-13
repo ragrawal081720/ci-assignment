@@ -19,6 +19,7 @@ This repository contains:
 7. [API endpoints](#6-api-endpoints)
 8. [CI/CD workflow](#7-cicd-workflow)
 9. [Manual monitoring workflow (GitHub Actions)](#8-manual-monitoring-workflow-github-actions)
+10. [Manual Helm deploy workflow (GitHub Actions)](#9-manual-helm-deploy-workflow-github-actions)
 
 ## Prerequisites
 
@@ -397,3 +398,44 @@ Required GitHub secrets (same cluster auth as deploy workflow):
 - `AWS_REGION`
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
+
+## 9. Manual Helm deploy workflow (GitHub Actions)
+
+Workflow: `.github/workflows/helm-manual-deploy.yml`
+
+This workflow is manual-only and deploys the app using Helm chart:
+- Chart path: `helm/ci-assignment`
+- Command shape: `helm upgrade --install`
+
+In GitHub UI:
+1. Open **Actions**.
+2. Select **Helm - Manual Deploy**.
+3. Click **Run workflow**.
+4. Fill inputs and run.
+
+Supported workflow inputs:
+- `release_name`: Helm release name (default `ci-assignment`)
+- `namespace`: target namespace (default `ci-assignment`)
+- `create_namespace`: whether chart should create namespace resource
+- `dockerhub_username`: image registry namespace/user (default `ragrawal081720`)
+- `image_tag`: image tag for backend/frontend (example `sha-abc1234`, default `latest`)
+- `helm_timeout`: Helm wait timeout (default `15m`)
+- `lb_url_patching`: enable/disable Helm post-upgrade LB URL patch hook
+- `hook_image`: optional hook image override for LB patcher job
+
+Required GitHub secrets:
+- `KUBECONFIG_B64`
+- `AWS_REGION`
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+
+Recommended run values for deterministic deploys:
+- `image_tag=sha-<short-commit>`
+- `create_namespace=false` (workflow pre-creates namespace idempotently)
+
+What this workflow does:
+- Configures AWS credentials and kubeconfig
+- Sets up `kubectl` and `helm`
+- Validates chart with `helm lint` and `helm template`
+- Deploys/updates release with selected chart values
+- Prints pods/services and current backend/frontend endpoints
