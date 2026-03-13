@@ -354,7 +354,51 @@ After apply, configure kubeconfig:
 aws eks update-kubeconfig --name ci-eks-cluster --region ap-south-1
 ```
 
-## 11. Troubleshooting
+## 11. Deployment Workflow Challenges and Lessons Learned
+
+### Cluster targeting across separate workflows
+
+Challenge:
+- `terraform-provision.yml` can create/update EKS and exposes `cluster_name` only inside that workflow run.
+- Separate deploy workflows (`cd-manual-deploy.yml`, `ci-cd-build-push-deploy.yml`, `helm-manual-deploy.yml`) do not consume Terraform outputs.
+
+Current behavior:
+- Deploy workflows target whichever cluster is referenced by `KUBECONFIG_B64`.
+- Running Terraform first does not automatically retarget later deploy workflows.
+
+Impact:
+- Deploy can fail or deploy to the wrong cluster if `KUBECONFIG_B64` is stale or points to a different context.
+
+Recommended practice:
+- Treat `KUBECONFIG_B64` as the source of truth for standalone deploy workflows, and rotate/update it whenever cluster context changes.
+- Prefer environment-specific variables/secrets (for example, `EKS_CLUSTER_NAME` + `AWS_REGION`) and generate kubeconfig in workflow via `aws eks update-kubeconfig`.
+
+### Existing cluster vs Terraform state
+
+Challenge:
+- If an EKS cluster with the same name already exists but is not tracked in Terraform state, `terraform apply` attempts to create it again.
+
+Impact:
+- Apply fails with resource-exists/name-conflict errors.
+
+Recommended practice:
+- Use remote state and keep state authoritative.
+- Import pre-existing resources before managing them with Terraform, or use a different cluster name.
+
+### Helm namespace creation flag confusion
+
+Challenge:
+- In `helm-manual-deploy.yml`, `create_namespace` controls chart-level namespace manifest rendering (`namespace.create`), not Helm CLI `--create-namespace`.
+
+Current behavior:
+- `create_namespace=true`: chart renders a `Namespace` resource.
+- `create_namespace=false`: workflow ensures namespace with `kubectl apply` before Helm deploy.
+
+Recommended practice:
+- Keep `create_namespace=false` as a safer default when namespace ownership is external or may already exist.
+- Use `true` only when Helm should own namespace creation and RBAC allows namespace creation.
+
+## 12. Troubleshooting
 
 ### `kubectl` cannot find namespace `ci-assignment`
 
