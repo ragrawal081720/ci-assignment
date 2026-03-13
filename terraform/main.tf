@@ -33,6 +33,7 @@ data "aws_availability_zones" "available" {
 }
 
 locals {
+    # EKS control plane requires subnets in at least two AZs.
     azs = slice(data.aws_availability_zones.available.names, 0, 2)
 }
 
@@ -44,17 +45,16 @@ module "vpc" {
     cidr = var.vpc_cidr
 
     azs             = local.azs
-    private_subnets = [for i in range(length(local.azs)) : cidrsubnet(var.vpc_cidr, 4, i)]
+    # Keep only public subnets to avoid NAT and extra private routing resources.
+    private_subnets = []
     public_subnets  = [for i in range(length(local.azs)) : cidrsubnet(var.vpc_cidr, 8, i + 48)]
+    # Required for worker nodes in public subnets when NAT is disabled.
+    map_public_ip_on_launch = true
 
     enable_nat_gateway = false
 
     public_subnet_tags = {
         "kubernetes.io/role/elb" = "1"
-    }
-
-    private_subnet_tags = {
-        "kubernetes.io/role/internal-elb" = "1"
     }
 
     tags = {
@@ -79,10 +79,11 @@ module "eks" {
 
     eks_managed_node_groups = {
         default = {
+            # t3.micro on EKS allows very low pod density; t3.small keeps costs low while fitting system + app pods.
             instance_types = ["t3.small"]
-            min_size       = 1
-            max_size       = 1
-            desired_size   = 1
+            min_size       = 2
+            max_size       = 2
+            desired_size   = 2
             capacity_type  = "ON_DEMAND"
         }
     }
