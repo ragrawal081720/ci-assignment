@@ -1,218 +1,189 @@
-# Books CRUD App (FastAPI + React)
+# CI Assignment: Books CRUD Platform
 
-This repository contains:
-- FastAPI backend with PostgreSQL and Redis cache
+Full-stack Books CRUD application with:
+- FastAPI backend (`/api`), PostgreSQL persistence, and Redis-backed list caching
 - React + Vite frontend
-- Docker Compose for local orchestration
-- Kubernetes manifests (`kube.yaml`) for app deployment
-- Monitoring scripts/manifests for Prometheus + Grafana
-- CI/CD workflow for image publish + Kubernetes deployment
+- Local orchestration with Docker Compose
+- Kubernetes deployment via raw manifests (`kube.yaml`) or Helm chart
+- Monitoring stack (Prometheus + Grafana) installed via scripts
+- GitHub Actions for CI, CD, Terraform provisioning, and manual operations
 
-## Table of Contents
+## Architecture
 
-1. [Run locally with Docker Compose](#1-run-locally-with-docker-compose)
-2. [Build and push multi-arch images to Docker Hub](#2-build-and-push-multi-arch-images-to-docker-hub)
-3. [Deploy to Kubernetes](#3-deploy-to-kubernetes)
-4. [Deploy with Helm (optional)](#36-deploy-with-helm-optional)
-5. [Install and use monitoring (Prometheus + Grafana)](#4-install-and-use-monitoring-prometheus--grafana)
-6. [Cleanup helpers](#5-cleanup-helpers)
-7. [API endpoints](#6-api-endpoints)
-8. [CI/CD workflow](#7-cicd-workflow)
-9. [Manual monitoring workflow (GitHub Actions)](#8-manual-monitoring-workflow-github-actions)
-10. [Manual Helm deploy workflow (GitHub Actions)](#9-manual-helm-deploy-workflow-github-actions)
+Runtime components:
+- Frontend (`frontend`) calls backend using `VITE_API_BASE_URL`
+- Backend (`backend`) exposes:
+	- CRUD endpoints under `/api/books`
+	- health endpoint at `/api/health`
+	- Prometheus metrics at `/metrics`
+- PostgreSQL stores book records
+- Redis caches the result of `GET /api/books` with TTL from `CACHE_TTL_SECONDS`
+
+Deployment options:
+- Local: Docker Compose (`docker-compose.yml`)
+- Kubernetes manifests: `kube.yaml` + helper scripts in `scripts/`
+- Helm chart: `helm/ci-assignment`
+
+## Repository Layout
+
+Key paths:
+- `backend/` FastAPI app, Alembic migrations, Dockerfile
+- `frontend/` React app, Vite config, Dockerfile
+- `kube.yaml` Kubernetes namespace + app resources (Postgres, Redis, backend, frontend)
+- `helm/ci-assignment/` Helm chart for app deployment
+- `monitoring/` kube-prometheus install/uninstall/open scripts + alerting/ServiceMonitor manifests
+- `scripts/` deployment, URL patching, image publish, and cleanup helpers
+- `terraform/` EKS and VPC provisioning config
+- `.github/workflows/` CI/CD/manual workflow definitions
 
 ## Prerequisites
 
-- Docker with Buildx support
-- `kubectl` configured for your cluster
-- Access to Docker Hub (or another OCI registry)
-- For monitoring install: `curl`, `tar`, `sed`
+- Docker (with Buildx if publishing multi-arch images)
+- `kubectl` configured for target cluster
+- `helm` (only for Helm deployment path)
+- Docker Hub credentials (for image push)
+- For monitoring install script: `curl`, `tar`, `sed`
+- For Terraform path: Terraform + AWS credentials
 
-## 1. Run locally with Docker Compose
+## 1. Run Locally (Docker Compose)
 
 From repo root:
 
 ```bash
 cp .env.example .env
-docker compose build
-docker compose up
+docker compose up --build
 ```
 
-Local endpoints:
+Local URLs:
 - Frontend: `http://localhost:5173`
-- Backend API: `http://localhost:8000/api`
-- Backend health: `http://localhost:8000/api/health`
-- Backend metrics: `http://localhost:8000/metrics`
+- Backend API base: `http://localhost:8000/api`
+- Health: `http://localhost:8000/api/health`
+- Metrics: `http://localhost:8000/metrics`
 
-Stop:
+Stop services:
 
 ```bash
 docker compose down
 ```
 
-Stop and also remove Postgres volume:
+Stop and remove Postgres volume:
 
 ```bash
 docker compose down -v
 ```
 
-## 2. Build and push multi-arch images to Docker Hub
+## 2. Configuration
 
-This repository includes `scripts/publish-multiarch.sh`, which publishes both backend and frontend images for `linux/amd64` and `linux/arm64`.
+Main runtime env vars (from `.env.example` and app config):
+- `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
+- `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `CACHE_TTL_SECONDS`
+- `FRONTEND_ORIGIN` (CORS allowlist value for backend)
+- `VITE_API_BASE_URL` (frontend backend URL)
+- `BACKEND_IMAGE`, `FRONTEND_IMAGE` (used by Docker Compose)
 
-From repo root:
+Defaults are tuned for local development (`localhost` endpoints).
+
+## 3. Build and Push Multi-Arch Images
+
+Use helper script:
 
 ```bash
 docker login
 ./scripts/publish-multiarch.sh <dockerhub-username>
 ```
 
-Optional explicit commit SHA:
+Optional explicit SHA/tag seed:
 
 ```bash
 ./scripts/publish-multiarch.sh <dockerhub-username> <commit-sha>
 ```
 
-What gets pushed:
+Published tags:
 - `<dockerhub-username>/books-backend:sha-<short-sha>`
 - `<dockerhub-username>/books-backend:latest`
 - `<dockerhub-username>/books-frontend:sha-<short-sha>`
 - `<dockerhub-username>/books-frontend:latest`
 
-## 3. Deploy to Kubernetes
+## 4. Deploy to Kubernetes (Manifests)
 
-### 3.1 Apply base manifests
+### 4.1 First-time/base apply
+
+```bash
+kubectl apply -f kube.yaml
+```
 
 `kube.yaml` creates:
 - Namespace `ci-assignment`
-- Postgres, Redis, backend, frontend workloads
-- Two LoadBalancer services (`backend:8000`, `frontend:5173`)
+- Secret `app-secrets` and ConfigMap `app-config`
+- Postgres + Redis deployments/services
+- Backend + frontend deployments/services (both `LoadBalancer`)
+- Static hostPath-based PV/PVC (`postgres-pv-local` / `postgres-pvc`)
 
-Apply base manifest:
+### 4.2 Roll out SHA images (recommended for updates)
 
-```bash
-kubectl apply -f kube.yaml
-```
-
-Note:
-Run this base apply for first-time setup (or when infrastructure manifests change).
-For normal image updates, use only step `3.2` to avoid an extra rollout.
-
-Postgres storage is statically pre-bound to `postgres-pv-local` using hostPath
-(`local-storage`) so it works directly in-cluster without EBS CSI provisioning.
-
-If you redeploy frequently, use the cleanup helper to remove both namespaces and
-the cluster-scoped PV before fresh apply:
-
-```bash
-./scripts/cleanup-namespaces.sh --wait --timeout 300
-kubectl apply -f kube.yaml
-```
-
-### 3.2 Roll out SHA-tagged images (recommended)
-
-Use declarative Kustomize overlay generated by `scripts/rollout-sha-images.sh`:
+`scripts/rollout-sha-images.sh` applies `kube.yaml` through a generated kustomize overlay with image replacements.
 
 ```bash
 ./scripts/rollout-sha-images.sh <dockerhub-username>
 ```
 
-Options:
+Variants:
 - `./scripts/rollout-sha-images.sh <dockerhub-username> <namespace>`
 - `./scripts/rollout-sha-images.sh <dockerhub-username> <namespace> <commit-sha>`
 
-### 3.3 Wait for LoadBalancer endpoints
+### 4.3 Patch LB URLs into runtime config
 
-```bash
-kubectl get svc -n ci-assignment -w
-```
-
-Wait until both `backend` and `frontend` have non-empty external endpoints (hostname or IP).
-
-### 3.4 Patch runtime URLs and restart in safe order
-
-`scripts/patch-lb-urls.sh` performs all of the following:
-- Reads backend/frontend LB hostnames
-- Patches `app-config` with:
-	- `FRONTEND_ORIGIN=http://<frontend-dns>:5173`
-	- `VITE_API_BASE_URL=http://<backend-dns>:8000/api`
-- Restarts only the deployments whose runtime values changed
-- Runs quick health checks
-
-Run:
+After services receive external DNS/IP, patch and restart safely:
 
 ```bash
 ./scripts/patch-lb-urls.sh
 ```
 
-Optional namespace override:
+Optional:
+- Namespace override: `./scripts/patch-lb-urls.sh <namespace>`
+- Force restart: `./scripts/patch-lb-urls.sh <namespace> --force-restart`
+
+What it does:
+- Reads backend/frontend `LoadBalancer` hostname/IP
+- Updates `app-config` with:
+	- `FRONTEND_ORIGIN=http://<frontend-endpoint>:5173`
+	- `VITE_API_BASE_URL=http://<backend-endpoint>:8000/api`
+- Restarts backend/frontend only when values changed
+- Runs quick curl checks against health/frontend URLs
+
+### 4.4 Verify
 
 ```bash
-./scripts/patch-lb-urls.sh <namespace>
+kubectl get pods -n ci-assignment
+kubectl get svc -n ci-assignment
 ```
 
-Force restart both deployments even when values are unchanged:
+Then test:
 
 ```bash
-./scripts/patch-lb-urls.sh <namespace> --force-restart
+curl -i "http://<backend-endpoint>:8000/api/health"
+curl -i "http://<frontend-endpoint>:5173"
 ```
 
-### 3.5 Verify deployment
+## 5. Deploy with Helm (Optional)
 
-```bash
-BACKEND_DNS=$(kubectl get svc backend -n ci-assignment -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-FRONTEND_DNS=$(kubectl get svc frontend -n ci-assignment -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+Chart path: `helm/ci-assignment`
 
-curl -i "http://$BACKEND_DNS:8000/api/health"
-curl -i -H "Origin: http://$FRONTEND_DNS:5173" "http://$BACKEND_DNS:8000/api/health"
-curl -i "http://$FRONTEND_DNS:5173"
-```
-
-Open app in browser:
-
-```text
-http://<FRONTEND_DNS>:5173
-```
-
-### 3.6 Deploy with Helm (optional)
-
-This repository also includes a Helm chart at `helm/ci-assignment`.
-It is an additional deployment option and does not replace existing methods
-(`kube.yaml`, scripts, or monitoring scripts).
-
-Chart deploys:
-- Namespace (optional)
-- Secret `app-secrets`
-- ConfigMap `app-config`
-- PostgreSQL Deployment + Service (+ PV/PVC for local hostPath by default)
-- Redis Deployment + Service
-- Backend Deployment + LoadBalancer Service
-- Frontend Deployment + LoadBalancer Service
-
-Validate chart:
+Validate:
 
 ```bash
 helm lint helm/ci-assignment
 helm template ci-assignment helm/ci-assignment
 ```
 
-Install:
+Install/upgrade:
 
 ```bash
 kubectl create namespace ci-assignment --dry-run=client -o yaml | kubectl apply -f -
-helm upgrade --install ci-assignment helm/ci-assignment \
-	-n ci-assignment
+helm upgrade --install ci-assignment helm/ci-assignment -n ci-assignment
 ```
 
-If you want Helm to create namespace resource itself:
-
-```bash
-helm upgrade --install ci-assignment helm/ci-assignment \
-	-n ci-assignment \
-	--set namespace.create=true
-```
-
-Override image tags:
+Override images:
 
 ```bash
 helm upgrade --install ci-assignment helm/ci-assignment \
@@ -223,13 +194,12 @@ helm upgrade --install ci-assignment helm/ci-assignment \
 	--set frontend.image.tag=sha-<short-sha>
 ```
 
-LoadBalancer URL patching with Helm:
-- By default, a post-install/post-upgrade hook waits for backend/frontend
-	LoadBalancer endpoints.
-- It patches `app-config` (`FRONTEND_ORIGIN`, `VITE_API_BASE_URL`) and restarts
-	backend/frontend only when values change.
+LoadBalancer URL patch hook behavior:
+- Enabled by default (`lbUrlPatching.enabled=true`)
+- Waits for LB endpoints and patches `app-config` values
+- Restarts only when values change
 
-Disable hook patching and patch manually:
+Disable hook patching:
 
 ```bash
 helm upgrade --install ci-assignment helm/ci-assignment \
@@ -237,65 +207,41 @@ helm upgrade --install ci-assignment helm/ci-assignment \
 	--set lbUrlPatching.enabled=false
 ```
 
-If your cluster cannot pull the default hook image, override it explicitly:
-
-```bash
-helm upgrade --install ci-assignment helm/ci-assignment \
-	-n ci-assignment \
-	--set lbUrlPatching.hookImage=bitnami/kubectl:latest
-```
-
-If your cloud takes longer to allocate LoadBalancer endpoints, increase Helm timeout:
-
-```bash
-helm upgrade --install ci-assignment helm/ci-assignment \
-	-n ci-assignment \
-	--timeout 15m
-```
-
-Uninstall Helm release:
+Uninstall:
 
 ```bash
 helm uninstall ci-assignment -n ci-assignment
 ```
 
-## 4. Install and use monitoring (Prometheus + Grafana)
+## 6. Monitoring (Prometheus + Grafana)
 
-This project installs kube-prometheus manifests with pure `kubectl` (no Helm).
-
-Install:
+Install kube-prometheus stack using scripts:
 
 ```bash
 ./monitoring/install-monitoring.sh
 ```
 
-Optional overrides:
+Useful overrides:
 
 ```bash
 MONITORING_NAMESPACE=ci-assignment-monitoring APP_NAMESPACE=ci-assignment KUBE_PROM_VERSION=v0.14.0 ./monitoring/install-monitoring.sh
-```
-
-Default mode is minimal profile (`MINIMAL_PROFILE=true`) for small clusters.
-Install full profile:
-
-```bash
 MINIMAL_PROFILE=false ./monitoring/install-monitoring.sh
 ```
 
-Access UIs via port-forward:
+Open UIs:
 
 ```bash
 ./monitoring/open-grafana.sh
 ./monitoring/open-prometheus.sh
 ```
 
-Defaults:
-- Grafana URL: `http://localhost:3000`
-- Prometheus URL: `http://localhost:9090`
+Default local URLs:
+- Grafana: `http://localhost:3000`
+- Prometheus: `http://localhost:9090`
 
-Grafana username: `admin`
-
-Fetch Grafana password:
+Grafana credentials:
+- Username: `admin`
+- Password (read from cluster secret):
 
 ```bash
 if kubectl get secret grafana-admin-credentials -n ci-assignment-monitoring >/dev/null 2>&1; then
@@ -305,18 +251,13 @@ else
 fi
 ```
 
-The backend metrics endpoint scraped by ServiceMonitor is:
-- Service label: `app=backend`
-- Port name: `http`
-- Path: `/metrics`
-
-Uninstall monitoring:
+Uninstall:
 
 ```bash
 ./monitoring/uninstall-monitoring.sh
 ```
 
-## 5. Cleanup helpers
+## 7. Cleanup Helpers
 
 Delete app and monitoring namespaces:
 
@@ -324,49 +265,66 @@ Delete app and monitoring namespaces:
 ./scripts/cleanup-namespaces.sh
 ```
 
-Delete and wait for completion:
+Delete and wait:
 
 ```bash
 ./scripts/cleanup-namespaces.sh --wait --timeout 300
 ```
 
-Verify cleanup status (exit `0` when both namespaces are absent):
+Verify namespace cleanup:
 
 ```bash
 ./scripts/verify-namespaces-cleanup.sh
 ```
 
-## 6. API endpoints
+## 8. API Reference
 
+Books:
 - `POST /api/books`
 - `GET /api/books`
 - `GET /api/books/{book_id}`
 - `PUT /api/books/{book_id}`
 - `DELETE /api/books/{book_id}`
-- `GET /api/health`
-- `GET /metrics`
 
-## 7. CI/CD workflow
+Operational:
+- `GET /api/health` (returns `ok` or `degraded` based on DB/Redis checks)
+- `GET /metrics` (Prometheus scrape endpoint)
 
-Workflow: `.github/workflows/ci-cd-build-push-deploy.yml`
+## 9. GitHub Actions Workflows
 
-On push to `main` (relevant paths), the workflow:
-- Builds and pushes multi-arch backend/frontend images
-- Tags with `latest` and `sha-<commit>`
-- Rolls out SHA images via `scripts/rollout-sha-images.sh`
-- Waits for LB hostnames
-- Patches runtime URLs via `scripts/patch-lb-urls.sh`
+Workflows in `.github/workflows/`:
 
-Required GitHub secrets:
+- `ci-build-push.yml`
+	- Trigger: push to `main` (selected paths) and tags `v*`
+	- Purpose: build and push multi-arch images to Docker Hub
+
+- `ci-cd-build-push-deploy.yml`
+	- Trigger: manual (`workflow_dispatch`)
+	- Purpose: publish images and deploy to Kubernetes (`ci-assignment` namespace)
+
+- `cd-manual-deploy.yml`
+	- Trigger: manual (`workflow_dispatch`)
+	- Purpose: deploy a SHA image to chosen namespace using existing published images
+
+- `helm-manual-deploy.yml`
+	- Trigger: manual (`workflow_dispatch`)
+	- Purpose: deploy app via Helm chart
+
+- `monitoring-manual.yml`
+	- Trigger: manual (`workflow_dispatch`)
+	- Purpose: install/uninstall monitoring stack
+
+- `terraform-provision.yml`
+	- Trigger: manual (`workflow_dispatch`)
+	- Purpose: Terraform plan/apply, then (for `apply`) publish + deploy
+
+Common required secrets for deploy/infra workflows:
 - `DOCKERHUB_USERNAME`
 - `DOCKERHUB_TOKEN`
-- `KUBECONFIG_B64`
+- `KUBECONFIG_B64` (for kubeconfig-based deploy workflows)
 - `AWS_REGION`
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
-
-Deploy namespace is fixed in CI:
-- `ci-assignment`
 
 Generate `KUBECONFIG_B64` locally:
 
@@ -374,68 +332,111 @@ Generate `KUBECONFIG_B64` locally:
 base64 < ~/.kube/config | tr -d '\n'
 ```
 
-## 8. Manual monitoring workflow (GitHub Actions)
+## 10. Terraform Infra (EKS)
 
-Workflow: `.github/workflows/monitoring-manual.yml`
+`terraform/main.tf` provisions:
+- VPC with public subnets
+- EKS cluster (`cluster_name` default: `ci-eks-cluster`)
+- Managed node group (default `t3.small`, desired size `2`)
 
-This workflow is manual-only and does not run on push/PR.
+Quick run:
 
-In GitHub UI:
-1. Open **Actions**.
-2. Select **Monitoring - Manual Install/Uninstall**.
-3. Click **Run workflow**.
-4. Choose inputs and run.
+```bash
+cd terraform
+terraform init
+terraform plan
+terraform apply
+```
 
-Supported workflow inputs:
-- `operation`: `install` or `uninstall`
-- `app_namespace`: defaults to `ci-assignment`
-- `monitoring_namespace`: defaults to `ci-assignment-monitoring`
-- `kube_prom_version`: defaults to `v0.14.0`
-- `minimal_profile`: defaults to `true`
+After apply, configure kubeconfig:
 
-Required GitHub secrets (same cluster auth as deploy workflow):
-- `KUBECONFIG_B64`
-- `AWS_REGION`
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
+```bash
+aws eks update-kubeconfig --name ci-eks-cluster --region ap-south-1
+```
 
-## 9. Manual Helm deploy workflow (GitHub Actions)
+## 11. Troubleshooting
 
-Workflow: `.github/workflows/helm-manual-deploy.yml`
+### `kubectl` cannot find namespace `ci-assignment`
 
-This workflow is manual-only and deploys the app using Helm chart:
-- Chart path: `helm/ci-assignment`
-- Command shape: `helm upgrade --install`
+Symptoms:
+- `kubectl get ns ci-assignment` returns NotFound
 
-In GitHub UI:
-1. Open **Actions**.
-2. Select **Helm - Manual Deploy**.
-3. Click **Run workflow**.
-4. Fill inputs and run.
+Fix:
 
-Supported workflow inputs:
-- `release_name`: Helm release name (default `ci-assignment`)
-- `namespace`: target namespace (default `ci-assignment`)
-- `create_namespace`: whether chart should create namespace resource
-- `dockerhub_username`: image registry namespace/user (default `ragrawal081720`)
-- `image_tag`: image tag for backend/frontend (example `sha-abc1234`, default `latest`)
-- `helm_timeout`: Helm wait timeout (default `15m`)
-- `lb_url_patching`: enable/disable Helm post-upgrade LB URL patch hook
-- `hook_image`: optional hook image override for LB patcher job
+```bash
+kubectl apply -f kube.yaml
+kubectl get ns ci-assignment
+```
 
-Required GitHub secrets:
-- `KUBECONFIG_B64`
-- `AWS_REGION`
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
+### Backend/frontend `LoadBalancer` endpoint stays pending
 
-Recommended run values for deterministic deploys:
-- `image_tag=sha-<short-commit>`
-- `create_namespace=false` (workflow pre-creates namespace idempotently)
+Symptoms:
+- `kubectl get svc -n ci-assignment` shows `<pending>` for `EXTERNAL-IP`
 
-What this workflow does:
-- Configures AWS credentials and kubeconfig
-- Sets up `kubectl` and `helm`
-- Validates chart with `helm lint` and `helm template`
-- Deploys/updates release with selected chart values
-- Prints pods/services and current backend/frontend endpoints
+Checks:
+
+```bash
+kubectl get svc -n ci-assignment
+kubectl describe svc backend -n ci-assignment
+kubectl describe svc frontend -n ci-assignment
+```
+
+Notes:
+- This usually indicates cloud LB provisioning is still in progress or cluster/network permissions are incomplete.
+- Patch URLs only after both backend and frontend have an external hostname/IP.
+
+### CORS errors from frontend to backend
+
+Symptoms:
+- Browser shows CORS blocked request for backend API calls
+
+Fix:
+
+```bash
+./scripts/patch-lb-urls.sh ci-assignment
+kubectl get configmap app-config -n ci-assignment -o yaml | grep -E 'FRONTEND_ORIGIN|VITE_API_BASE_URL'
+```
+
+`FRONTEND_ORIGIN` must match the frontend URL (including `http://` and `:5173`).
+
+### Pods in `CrashLoopBackOff` or not Ready
+
+Checks:
+
+```bash
+kubectl get pods -n ci-assignment
+kubectl describe pod <pod-name> -n ci-assignment
+kubectl logs <pod-name> -n ci-assignment --previous
+```
+
+If backend is failing, verify DB/Redis readiness:
+
+```bash
+kubectl get pods -n ci-assignment -l app=postgres
+kubectl get pods -n ci-assignment -l app=redis
+```
+
+### Monitoring UI not reachable locally
+
+Checks:
+
+```bash
+kubectl get pods -n ci-assignment-monitoring
+kubectl get svc -n ci-assignment-monitoring
+```
+
+Re-open port-forwards:
+
+```bash
+./monitoring/open-grafana.sh
+./monitoring/open-prometheus.sh
+```
+
+### Fresh redeploy keeps old state
+
+Use cleanup helpers and redeploy:
+
+```bash
+./scripts/cleanup-namespaces.sh --wait --timeout 300
+kubectl apply -f kube.yaml
+```
